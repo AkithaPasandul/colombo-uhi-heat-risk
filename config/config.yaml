@@ -1,0 +1,39 @@
+# Locked project decisions. Set once in Week 1, do not change.
+# Everything downstream inherits from here.
+
+project:
+  name: "Colombo UHI & Heat Exposure"
+  crs: "EPSG:5234"          # Sri Lanka grid (SLD99). Alternative: EPSG:32644 (UTM 44N).
+  grid_resolution_m: 100    # aligns with Landsat thermal + WorldPop
+
+aoi:
+  name: "Colombo Municipal Council"
+  boundary_path: "data/external/cmc_boundary.geojson"
+  extend_to_greater_colombo: false   # stretch goal only
+
+time:
+  dry_season_start: "2024-01-01"
+  dry_season_end:   "2024-03-31"
+  years: [2023, 2024]                # add a year if cloud cover leaves gaps
+  modis_night: true                  # nighttime LST robustness layer
+
+datasets:
+  landsat: "LANDSAT/LC08/C02/T1_L2 + LANDSAT/LC09/C02/T1_L2"
+  modis:   "MODIS/061/MOD11A2"
+  worldcover: "ESA/WorldCover/v200"
+  worldpop:   "WorldPop/GP/100m/pop"
+  srtm:       "USGS/SRTMGL1_003"
+  ghs_built:  "JRC/GHSL/P2023A/GHS_BUILT_S"
+
+optional_model:
+  enabled: false                     # stretch goal only after the core pipeline is complete
+  target: "lst"
+  predictors: ["ndvi", "ndbi", "built_up", "lulc", "elevation", "dist_water"]
+  cv_folds: 5
+  spatial_cv: true
+
+hvi:
+  # Heat-Exposure Index = normalise( lst_z * pop_density * (1 - ndvi) )
+  # Call it exposure/risk unless adaptive capacity is added.
+  components: ["lst_z", "pop_density", "inv_ndvi"]
+  classes: 5

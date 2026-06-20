@@ -1,0 +1,26 @@
+data/raw/*
+data/interim/*
+data/processed/*
+data/external/*
+!**/.gitkeep
+outputs/figures/*
+outputs/maps/*
+outputs/tables/*
+outputs/models/*
+outputs/presentations/*
+!**/.gitkeep
+outputs/run.log
+
+# Optional ML stretch work. Keep local until the core GIS pipeline is complete.
+src/model.py
+src/shap_analysis.py
+notebooks/*model*.ipynb
+notebooks/*ml*.ipynb
+notebooks/*shap*.ipynb
+
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+env/
+*.json
