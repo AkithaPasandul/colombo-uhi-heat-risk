@@ -6,6 +6,7 @@ geopandas
 rasterio
 rioxarray
 xarray
+pyarrow
 shapely
 scikit-learn
 shap
