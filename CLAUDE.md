@@ -23,6 +23,8 @@ Undergraduate research project: *Urban Heat Island Mapping and Heat Exposure/Ris
 ./.venv/Scripts/python.exe src/features.py     # must run after preprocess.py
 ./.venv/Scripts/python.exe src/hvi.py          # must run after features.py
 ./.venv/Scripts/python.exe src/hotspots.py     # must run after features.py (independent of hvi.py)
+./.venv/Scripts/python.exe src/validation.py   # must run after features.py
+./.venv/Scripts/python.exe src/viz.py          # must run after hvi.py/hotspots.py/validation.py
 ```
 
 **Windows long-path note**: `jupyter`/`jupyterlab`/`geemap`/`earthengine-api`/`shap` fail to install as a full `pip install -r requirements.txt` on this machine — the project path plus jupyterlab's bundled JS asset filenames exceed the 260-char Windows path limit. The core pipeline packages (rasterio, geopandas, esda, libpysal, rioxarray, xarray, matplotlib, contextily, scikit-learn, pandas, numpy, pyyaml, pytest) install fine on their own and are sufficient for everything except actually opening a notebook. To use notebooks, enable Windows Long Path support first (Settings > System > For developers, or the `LongPathsEnabled` registry key), then retry the full install.
@@ -32,8 +34,8 @@ Undergraduate research project: *Urban Heat Island Mapping and Heat Exposure/Ris
 ### Pipeline stages (folders map to methodology stages)
 
 ```
-gee/ (composites+exports, DONE) -> src/grid -> src/preprocess -> src/features
-  -> src/hotspots -> src/hvi -> src/validation -> src/viz
+gee/ -> src/grid -> src/preprocess -> src/features
+  -> src/hotspots -> src/hvi -> src/validation -> src/viz   (all stages implemented)
 ```
 
 Data flow: `data/raw` (GEE exports, read-only, never modify) -> `data/interim` (aligned rasters) -> `data/processed` (feature table + grid). Tables to `outputs/tables/`, figures to `outputs/figures/`, final maps to `outputs/maps/`. **Nothing under `data/` or `outputs/` is version-controlled** (gitignored except `.gitkeep`) — outputs must be reproducible by re-running the pipeline, not committed.
@@ -64,9 +66,27 @@ Both also define an explicit **"analysis universe"** subset up front rather than
 
 `hotspots.py` builds Queen contiguity weights (`libpysal.weights.Queen.from_dataframe`) directly on the land+valid-LST polygon subset (joined from `grid.gpkg` by `cell_id`) rather than a distance band or the full grid — this is a regular 100m raster grid, so contiguity captures natural adjacency without an arbitrary distance threshold, and building from the land-only subset keeps water out of the weights matrix by construction. Getis-Ord Gi* uses `star=True` (Gi*, not Gi), binary weights (`transform="B"`), and `alternative="two-sided"` permutation p-values (esda's own recommendation over the legacy `"directed"` default) — both a naive `p<0.05` label and an FDR-corrected label (`esda.fdr`) are kept as separate columns (`label_raw` vs `label`) so multiple-testing inflation stays visible rather than silently corrected away.
 
-Two more discovered quirks worth knowing before writing `validation.py`:
+Two more discovered quirks worth knowing:
 - The HVI top-10 cells are *all* also significant Gi* hot spots (perfect overlap) — checked this isn't the HEI formula just echoing raw LST (it isn't: HEI top-10 only overlaps 7/10 with a pure-`lst_z` ranking, and `lst_z`/`pop_density` are meaningfully anti-correlated across the broader top-200). Explained by very strong global autocorrelation (Moran's I=0.80) plus this specific cluster being simultaneously extreme in heat and density.
-- Significant cold spots are dominated by an eastern wetland/park cluster (~79.888E, 6.90-6.92N, likely Diyasaru/Beddagana wetland park in Kotte — WorldCover class 10, NDVI ~0.82-0.84) plus a smaller coastal-strip cluster (class 60 bare/sparse, likely beach sand, at the AOI's western edge). Useful context for sanity-checking `validation.py`'s LST-by-landcover stats.
+- Significant cold spots are dominated by an eastern wetland/park cluster (~79.888E, 6.90-6.92N, likely Diyasaru/Beddagana wetland park in Kotte — WorldCover class 10, NDVI ~0.82-0.84) plus a smaller coastal-strip cluster (class 60 bare/sparse, likely beach sand, at the AOI's western edge).
+
+### The MODIS cross-CRS aggregation pattern (established in `validation.py`)
+
+`data/interim/modis_lst_native.tif` deliberately stays at native 1km/EPSG:4326 (never reprojected onto the 100m grid). To compare it against Landsat LST, `validation.py` goes the other direction: reprojects every 100m cell's centroid (`x`/`y` from `features.parquet`) to lon/lat via `pyproj.Transformer`, then uses the MODIS raster's own affine transform (inverted) to find which MODIS pixel each 100m cell falls into, and groups by that. Each MODIS block's Landsat-side value is the mean of **land-only** pixels in that block (never a naive all-pixel mean, which would reintroduce the same sea-surface mixing `land_mask` exists to prevent everywhere else), and blocks under 50% land are dropped entirely.
+
+Discovered quirk: this land-fraction filter barely reduces the sample (69 -> 68), because MOD11A2 already excludes ocean-dominant blocks at the source (its own valid cells have mean land_fraction 0.94) — the two filters are mostly redundant, not additive. Don't assume a land-fraction filter will meaningfully shrink an already-small remote-sensing validation sample; check first.
+
+### `viz.py` conventions (read-only figures/maps)
+
+Every plotting function reads only from `features.parquet`, `data/interim/*_aligned.tif`, and `outputs/tables/*.csv` — no statistics are computed here that aren't already sitting in a CSV or raster from an earlier stage (e.g. the LST-by-landcover boxplot is built from `lst_by_landcover.csv`'s precomputed quantiles via `ax.bxp()`, not by re-deriving quantiles from `features.parquet`).
+
+The four spatial maps (LST, NDVI, Gi* FDR classes, HEI 5-class) share one `plot_map()` helper for consistent extent/north-arrow/scale-bar/sizing. Its grey "excluded" underlay is keyed off **the plotted array's own NaN pattern** (`np.isnan(arr)`), not `land_mask` — a bug was caught where the HEI map showed white instead of grey over a land-but-no-population area, since `land_mask` alone doesn't know about HEI's other exclusion reasons (no WorldPop data, no valid LST, etc.). Reuse this NaN-based approach for any new map, not a `land_mask`-keyed one, unless the array's exclusions are provably identical to `land_mask`.
+
+Sizing is hard-coded for an ICTAR two-column paper: `SINGLE_COL_WIDTH_IN = 3.35` (~85mm), `DPI = 300`, all `rcParams` font sizes >=8pt, every `savefig` call uses `bbox_inches="tight"` (needed — `fig.tight_layout()` alone left a large blank margin above the maps). If the target venue/column width changes, update these constants rather than hand-tuning individual figures.
+
+One discovered quirk worth knowing: a bar chart of `hei_class` counts is tautological under quantile classification (5 equal-count classes by construction, always ~equal bars regardless of the data) — `hei_distribution_histogram.png` shows the continuous HEI value instead, with the 4 class-boundary quantile cut points as vertical lines. Don't add a per-class count bar chart back without the same caveat in mind.
+
+The Colombo Port City reclamation area (western peninsula, ~79.823-79.845E, 6.924-6.951N) is a confirmed, checkable example of the raster year-mismatch limitation: 73% bare/sparse + 23% built-up land cover, near-zero NDVI, a real Gi* hot-spot concentration (20% of its cells), yet 30% of its cells carry WorldPop-2020 population despite the site's footprint changing substantially through continued reclamation since 2020. Useful concrete illustration if the paper's limitations section needs one.
 
 ### Fixed methodological decisions (do not reopen)
 
@@ -100,8 +120,8 @@ Set once in `config/config.yaml` (comment: "Locked project decisions... do not c
 | `features.py` | implemented | Stacks aligned rasters into `data/processed/features.parquet` (10,854 rows): `cell_id, x, y, lst, ndvi, ndbi, built_up, lulc_class, pop_count, pop_density, valid_lst, pop_valid, land_mask`. No `elevation`/`dist_water` — no SRTM raster was exported, only ever needed for the deferred ML layer. The single contract every downstream module reads. |
 | `hotspots.py` | implemented | Global Moran's I (0.7978, p=0.001) + Getis-Ord Gi* on LST, Queen weights on the land+valid-LST subset (5,777 cells). Outputs `outputs/tables/hotspots.csv` + `outputs/maps/hotspots.gpkg` (both/uncorrected and FDR-corrected labels). |
 | `hvi.py` | implemented | Combines `lst_z` (land-only z-score), `pop_density`, `inv_ndvi` into HEI per the fixed formula; 5-class quantile classify. 5,391 valid cells. Outputs `outputs/tables/hei_by_cell.csv`, `outputs/maps/hei.tif`, `outputs/maps/hei_classified.tif`. |
-| `validation.py` | stub | Landsat-vs-MODIS aggregation/correlation, LST-by-landcover stats, LST/NDVI/NDBI/built-up correlation matrix — all land-only. |
-| `viz.py` | stub | Final maps/figures only, reads from `outputs/tables`/`data/processed`. No computation. |
+| `validation.py` | implemented | Landsat-vs-MODIS pattern check (land-only block aggregation, n=68, r=0.234), LST-by-landcover stats, LST/NDVI/NDBI/built-up correlation matrix — all land-only. Outputs `outputs/tables/{validation,correlation_matrix,lst_by_landcover}.csv`. |
+| `viz.py` | implemented | Final maps/figures only, reads from `outputs/tables`/`data/interim`/`features.parquet`. No computation. Sized for an ICTAR two-column paper (~85mm width, >=8pt fonts, 300dpi). Outputs 3 figures + 4 maps (see "viz.py conventions" below). |
 
 ### Import convention
 
