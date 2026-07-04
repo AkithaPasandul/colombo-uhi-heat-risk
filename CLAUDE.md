@@ -18,6 +18,8 @@ Undergraduate research project: *Urban Heat Island Mapping and Heat Exposure/Ris
 
 # Run any src/ module as a script (no package __init__.py — see Import convention below)
 ./.venv/Scripts/python.exe src/check_raw_data.py
+./.venv/Scripts/python.exe src/grid.py         # must run before preprocess.py (builds grid_reference.tif)
+./.venv/Scripts/python.exe src/preprocess.py    # must run after grid.py
 ```
 
 **Windows long-path note**: `jupyter`/`jupyterlab`/`geemap`/`earthengine-api`/`shap` fail to install as a full `pip install -r requirements.txt` on this machine — the project path plus jupyterlab's bundled JS asset filenames exceed the 260-char Windows path limit. The core pipeline packages (rasterio, geopandas, esda, libpysal, rioxarray, xarray, matplotlib, contextily, scikit-learn, pandas, numpy, pyyaml, pytest) install fine on their own and are sufficient for everything except actually opening a notebook. To use notebooks, enable Windows Long Path support first (Settings > System > For developers, or the `LongPathsEnabled` registry key), then retry the full install.
@@ -32,6 +34,16 @@ gee/ (composites+exports, DONE) -> src/grid -> src/preprocess -> src/features
 ```
 
 Data flow: `data/raw` (GEE exports, read-only, never modify) -> `data/interim` (aligned rasters) -> `data/processed` (feature table + grid). Tables to `outputs/tables/`, figures to `outputs/figures/`, final maps to `outputs/maps/`. **Nothing under `data/` or `outputs/` is version-controlled** (gitignored except `.gitkeep`) — outputs must be reproducible by re-running the pipeline, not committed.
+
+Current `data/interim/` contents (all produced by `grid.py`/`preprocess.py`, all 134x81): `grid_reference.tif` (the alignment target), `lst_aligned.tif`, `ndvi_aligned.tif`, `ndbi_aligned.tif`, `worldcover_aligned.tif`, `worldpop_aligned.tif`, `ghsl_built_aligned.tif`, `land_mask.tif`, plus `modis_lst_native.tif` (kept at native 1km/EPSG:4326, deliberately *not* aligned to the grid). `data/processed/grid.gpkg` holds the same grid as a row/col-indexed polygon layer.
+
+### The reference-grid pattern (established in `grid.py`/`preprocess.py`, follow it for any new raster work)
+
+`grid.py` builds `data/interim/grid_reference.tif` — a minimal single-band raster whose transform/shape/CRS is the canonical target every other raster aligns to. `preprocess.py` then does exactly **one `rasterio.warp.reproject()` call per raster**, always passing `dst_transform`/`dst_crs`/`dst_shape` read from this reference file (never from another aligned raster or hand-computed bounds) — this is what guarantees every aligned layer shares identical pixel corners. Resampling method is chosen per raster type via a spec table (`preprocess.py`'s `RASTER_SPECS`), not a single global default: bilinear for continuous fields (LST/NDVI/NDBI/GHSL), `Resampling.mode` for WorldCover (does mode-aggregation + reproject in one warp — this GDAL build, 3.12.1, supports the mode kernel directly, so a separate two-step aggregate-then-reproject isn't needed), `Resampling.sum` for WorldPop (conserves population mass instead of averaging it away). None of the raw rasters carry a GDAL nodata tag, so every aligned output gets one set explicitly in its profile (-9999.0 for float layers, 255 for WorldCover).
+
+**Verification convention**: both `check_raw_data.py` and `preprocess.py` verify by *re-opening the written file from disk* and reading its actual shape/nodata/values back — never by trusting the in-memory array that was just written. Follow this pattern for `features.py`/`hvi.py` outputs too.
+
+One discovered quirk worth knowing before writing `features.py`: WorldCover's raw class 20 (shrubland) disappeared entirely after mode-aggregation to 100m — it was never the dominant class in any 10x10 block of 10m source pixels. Don't assume all raw WorldCover classes survive alignment.
 
 ### Fixed methodological decisions (do not reopen)
 
@@ -60,8 +72,8 @@ Set once in `config/config.yaml` (comment: "Locked project decisions... do not c
 | `config.py` | implemented | Load `config/config.yaml`. Pure loader, no logic. |
 | `utils.py` | implemented | `setup_logging()` (wires `config/logging.yaml`, console+file handlers to `outputs/run.log`), `minmax()`. Cross-cutting helpers only — no domain logic. |
 | `check_raw_data.py` | implemented | Raw-data audit gate — NaN-aware stats + assertions on all 7 rasters, writes `outputs/tables/raw_data_audit.csv`. Run this before trusting any preprocessing decision. |
-| `grid.py` | stub | Build the 100m reference grid (EPSG:32644) from `data/external/cmc_boundary.geojson`'s bbox geometry. Output: `data/processed/grid.gpkg` + a reference transform/shape every other raster's reproject call targets. |
-| `preprocess.py` | stub | Reproject+resample each raw raster onto `grid.py`'s reference transform (one function per resampling strategy — continuous/categorical/count, see raster quirks above). Also derives `land_mask` from aligned WorldCover. Never touches `data/raw/`. |
+| `grid.py` | implemented | Builds the 100m reference grid (EPSG:32644) from `data/external/cmc_boundary.geojson`'s bbox geometry, bounds snapped outward to clean 100m multiples. Outputs `data/processed/grid.gpkg` (polygon grid) + `data/interim/grid_reference.tif` (the reproject target). Current AOI resolves to **81 x 134 cells**. |
+| `preprocess.py` | implemented | Aligns all 7 raw rasters onto `grid_reference.tif` (see "reference-grid pattern" above) and derives `land_mask` from aligned WorldCover (`!= 80` and `!= 255`). Never touches `data/raw/`. Verified: land ~53%/water ~47%, WorldPop mass conserved within ~0.7%. |
 | `features.py` | stub | Stack aligned rasters into one row-per-cell table (`data/processed/features.parquet`) — the single contract every downstream module reads. |
 | `hotspots.py` | stub | Global Moran's I + Getis-Ord Gi* on LST (via `esda`/`libpysal`), computed over land cells only. |
 | `hvi.py` | stub | Combine `lst_z` (land-only), `pop_density`, `inv_ndvi` into HEI per the fixed formula; 5-class quantile classify. |
