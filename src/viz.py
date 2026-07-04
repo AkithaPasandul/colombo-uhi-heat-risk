@@ -230,19 +230,22 @@ def make_landcover_boxplot():
 
 
 def make_hei_histogram():
+    # A bar chart of per-class counts is tautological under quantile classification (all 5
+    # classes are equal-count by construction) - show the continuous distribution instead, with
+    # the 4 quantile cut points (20/40/60/80th percentile) that define the class boundaries.
     hei = pd.read_csv(OUTPUTS_TABLES / "hei_by_cell.csv")
-    counts = hei["hei_class"].value_counts().reindex([1, 2, 3, 4, 5], fill_value=0)
+    valid = hei["hei"].dropna()
+    cut_points = valid.quantile([0.2, 0.4, 0.6, 0.8]).values
 
     fig, ax = plt.subplots(figsize=(SINGLE_COL_WIDTH_IN, SINGLE_COL_WIDTH_IN * 0.75))
-    colours = plt.get_cmap("viridis", 5)(range(5))
-    ax.bar(counts.index.astype(str), counts.values, color=colours, edgecolor="black", linewidth=0.5)
-    ax.set_xlabel("HEI class (1=low, 5=high)")
+    ax.hist(valid, bins=40, color="#440154", edgecolor="black", linewidth=0.3)
+    for cp in cut_points:
+        ax.axvline(cp, color="black", linestyle="--", linewidth=1)
+    ax.set_xlabel("HEI (continuous, minmax-normalised)")
     ax.set_ylabel("Number of cells")
-    ax.set_title("HEI class distribution")
-    for i, v in enumerate(counts.values):
-        ax.text(i, v, str(v), ha="center", va="bottom", fontsize=8)
+    ax.set_title(f"HEI distribution (n={len(valid)})")
     fig.tight_layout()
-    out_path = OUTPUTS_FIGURES / "hei_class_histogram.png"
+    out_path = OUTPUTS_FIGURES / "hei_distribution_histogram.png"
     fig.savefig(out_path, dpi=DPI, bbox_inches="tight")
     plt.close(fig)
     return out_path
