@@ -10,6 +10,8 @@ def setup_logging():
     return logging.getLogger("colombo-uhi")
 
 def minmax(series):
-    """Normalise to 0-1; used by the HEI."""
+    """Normalise to 0-1; used by the HEI. Zero-range input (hi == lo) returns all zeros instead of NaN/inf."""
     lo, hi = series.min(), series.max()
+    if hi == lo:
+        return series * 0.0
     return (series - lo) / (hi - lo)
