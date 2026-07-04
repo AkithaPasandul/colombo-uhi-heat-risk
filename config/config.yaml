@@ -3,12 +3,12 @@
 
 project:
   name: "Colombo UHI & Heat Exposure"
-  crs: "EPSG:5234"          # Sri Lanka grid (SLD99). Alternative: EPSG:32644 (UTM 44N).
+  crs: "EPSG:32644"         # WGS 84 / UTM zone 44N. Fixed decision — do not change.
   grid_resolution_m: 100    # aligns with Landsat thermal + WorldPop
 
 aoi:
-  name: "Colombo Municipal Council"
-  boundary_path: "data/external/cmc_boundary.geojson"
+  name: "Colombo bounding box AOI"   # rectangular bbox, NOT an administrative boundary
+  boundary_path: "data/external/cmc_boundary.geojson"   # despite the filename, this file's geometry is the fixed bbox: W 79.8189, S 6.8618, E 79.8910, N 6.9821
   extend_to_greater_colombo: false   # stretch goal only
 
 time:

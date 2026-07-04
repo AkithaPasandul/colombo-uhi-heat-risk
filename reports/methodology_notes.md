@@ -1,6 +1,16 @@
 # Methodology notes
 Log decisions + parameters as you go (feeds the chapter).
 
-- AOI / CRS / grid:
-- Date window + cloud notes:
-- Index framing (exposure vs vulnerability):
+- AOI / CRS / grid: AOI is a fixed rectangular bounding box (W 79.8189, S 6.8618, E 79.8910, N 6.9821), not an administrative boundary — report all stats as "within study bbox," never "within Colombo Municipal Council." Target CRS EPSG:32644 (WGS84/UTM44N), 100m analysis grid. `config/config.yaml` originally had CRS=EPSG:5234 and mislabeled the AOI as "Colombo Municipal Council" — both fixed (2026-07-04); the underlying `data/external/cmc_boundary.geojson` geometry was already correct (a bbox rectangle), only its name/label was wrong.
+- Date window + cloud notes: dry season 2024-01-01 to 2024-03-31. Raw data year mismatch across layers is a known limitation: LST/NDVI/NDBI 2024, WorldCover 2021, WorldPop/GHSL 2020 — framed as "most-recent-available composite," not a current-year snapshot.
+- Index framing (exposure vs vulnerability): called "Heat Exposure Index (HEI)," not "Heat Vulnerability Index" — no socioeconomic/adaptive-capacity data is available.
+- Land masking (required, not optional): ~45% of the bbox is ocean (WorldCover class 80, confirmed 45.1% of pixels). LST is valid (not nodata) over water (100% valid overall), so `lst_z`, correlations, LST-by-landcover stats, and Getis-Ord Gi* must all be computed over land cells only (`land_mask = worldcover != 80`), otherwise sea-surface temperatures bias the land z-scores. Water cells stay visible on raw LST/hotspot maps but are excluded from every statistic and from the HEI itself.
+- Raw-data audit (2026-07-04, `src/check_raw_data.py`, all 7 rasters, all checks passed):
+  - LST: EPSG:4326, 269x448 @ ~0.000269 deg (~30m), 100% valid, 28.55-49.28 degC.
+  - MODIS LST: EPSG:4326, 9x15 @ ~0.00898 deg (~1km), 51.11% valid (~69 of 135 cells), 31.80-35.54 degC — used only as a coarse pattern/consistency check against Landsat LST, never as pixel-level ground truth.
+  - NDVI: EPSG:4326, same grid as LST, 78.36% valid, range -0.999 to 0.990.
+  - NDBI: EPSG:4326, same grid as LST, 78.45% valid, range -0.689 to 0.999.
+  - WorldCover: EPSG:4326, 804x1340 @ ~0.0000898 deg (~10m native) — needs mode-aggregation to 100m before nearest-neighbour reproject. Classes present: {10,20,30,40,50,60,80,90}; class 80 (water) = ~45% of pixels.
+  - WorldPop: EPSG:4326, 81x135 @ ~0.000898 deg (~100m), 54.57% valid (rest is nodata over ocean/lagoon, not zero-population land), values 1.24-518.80 people/cell.
+  - GHSL built-surface: **ESRI:54009 (Mollweide)** — the only raw raster not in EPSG:4326 — 85x149 @ 100m native, 100% valid, 0-8130 m2/cell. Direct reproject Mollweide->EPSG:32644, no averaging needed (native res already matches the 100m target).
+  - None of the 7 raw rasters carry a GDAL nodata tag (bare NaN values) — aligned outputs in `data/interim/` must set nodata explicitly in the raster profile.
