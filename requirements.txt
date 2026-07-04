@@ -18,4 +18,8 @@ matplotlib
 contextily
 pyyaml
 jupyter
+nbformat
+nbclient
+ipykernel
+papermill
 pytest
