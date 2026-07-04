@@ -17,3 +17,6 @@ One line per run. Date | what changed | result | keep?
 
 **Next step**: `src/validation.py` per plan §5 - Landsat-vs-MODIS pattern comparison (aggregate Landsat LST to the MODIS 1km grid, correlate/RMSE, framed as pattern-check not ground-truth given MODIS's tiny ~69-valid-cell sample), LST-by-landcover summary stats, and LST/NDVI/NDBI/built-up correlation matrix - all restricted to land cells only, same `land_mask` convention as every prior stage. Outputs: `outputs/tables/validation.csv`, `lst_by_landcover.csv`, `correlation_matrix.csv`.
 
+- 2026-07-04 | Wrote `src/validation.py` (MODIS land-only block aggregation, correlation matrix, LST-by-landcover); added `pyproj`/`scipy` to requirements.txt (already-transitive deps, now direct) | MODIS check: n=68 (not "well below 69" as expected - MOD11A2's own missingness already mostly excludes water blocks, so the 50%-land filter barely bites further), r=0.234 (p=0.055, borderline), RMSE=7.29 degC - weak, framed as illustrative given MODIS's coarse resolution; correlation matrix lst-ndvi=-0.486, lst-ndbi=+0.724, lst-built_up=+0.356 (directions as expected); LST-by-landcover confirms built-up/bare hottest (~41.4-41.5 degC), tree cover/grassland cooler (~38.6-39.3), wetland coolest (34.8, n=3 too small) | keep — outputs/tables/validation.csv + correlation_matrix.csv + lst_by_landcover.csv ready for viz.py
+
+
