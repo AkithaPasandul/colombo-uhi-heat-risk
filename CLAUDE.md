@@ -35,7 +35,7 @@ gee/ (composites+exports, DONE) -> src/grid -> src/preprocess -> src/features
 
 Data flow: `data/raw` (GEE exports, read-only, never modify) -> `data/interim` (aligned rasters) -> `data/processed` (feature table + grid). Tables to `outputs/tables/`, figures to `outputs/figures/`, final maps to `outputs/maps/`. **Nothing under `data/` or `outputs/` is version-controlled** (gitignored except `.gitkeep`) — outputs must be reproducible by re-running the pipeline, not committed.
 
-Current `data/interim/` contents (all produced by `grid.py`/`preprocess.py`, all 134x81): `grid_reference.tif` (the alignment target), `lst_aligned.tif`, `ndvi_aligned.tif`, `ndbi_aligned.tif`, `worldcover_aligned.tif`, `worldpop_aligned.tif`, `ghsl_built_aligned.tif`, `land_mask.tif`, plus `modis_lst_native.tif` (kept at native 1km/EPSG:4326, deliberately *not* aligned to the grid). `data/processed/grid.gpkg` holds the same grid as a row/col-indexed polygon layer.
+Current `data/interim/` contents (all produced by `grid.py`/`preprocess.py`, all 134x81): `grid_reference.tif` (the alignment target), `lst_aligned.tif`, `ndvi_aligned.tif`, `ndbi_aligned.tif`, `worldcover_aligned.tif`, `worldpop_aligned.tif`, `ghsl_built_aligned.tif`, `land_mask.tif`, plus `modis_lst_native.tif` (kept at native 1km/EPSG:4326, deliberately *not* aligned to the grid). `data/processed/grid.gpkg` holds the same grid as a row/col-indexed polygon layer; `data/processed/features.parquet` is the row-per-cell feature table built by `features.py` (10,854 rows).
 
 ### The reference-grid pattern (established in `grid.py`/`preprocess.py`, follow it for any new raster work)
 
@@ -43,7 +43,15 @@ Current `data/interim/` contents (all produced by `grid.py`/`preprocess.py`, all
 
 **Verification convention**: both `check_raw_data.py` and `preprocess.py` verify by *re-opening the written file from disk* and reading its actual shape/nodata/values back — never by trusting the in-memory array that was just written. Follow this pattern for `features.py`/`hvi.py` outputs too.
 
-One discovered quirk worth knowing before writing `features.py`: WorldCover's raw class 20 (shrubland) disappeared entirely after mode-aggregation to 100m — it was never the dominant class in any 10x10 block of 10m source pixels. Don't assume all raw WorldCover classes survive alignment.
+One discovered quirk worth knowing: WorldCover's raw class 20 (shrubland) disappeared entirely after mode-aggregation to 100m — it was never the dominant class in any 10x10 block of 10m source pixels. Don't assume all raw WorldCover classes survive alignment.
+
+### The feature-table pattern (established in `features.py`)
+
+`features.py` flattens every aligned raster with `.ravel()` (row-major/C-order) and builds `cell_id = np.arange(height*width)` the same way — this matches `grid.py`'s polygon grid exactly (`cell_id = row*width + col`), so `cell_id` is a stable join key between `features.parquet` and `grid.gpkg` without needing a spatial join. Cell-centroid `x`/`y` (EPSG:32644) are derived directly from `grid_reference.tif`'s affine transform, not recomputed per-raster. Every aligned raster's nodata sentinel (-9999.0 / 255) is converted back to real NaN in the table (`to_nan()`) — raster nodata sentinels are a GeoTIFF-format necessity, not something pandas code downstream should have to remember to filter. Writing the parquet needs `pyarrow` (added to `requirements.txt`, installed separately from the rest — see Windows long-path note above, this one didn't hit that issue).
+
+Two discovered data quirks worth knowing before writing `hvi.py`/`validation.py`:
+- ~604 cells are WorldCover water (class 80) but carry valid WorldPop population data, tightly clustered along a narrow N-S band — almost certainly a Colombo canal/lagoon feature where WorldPop's disaggregation model attributes population to fringing settlements along water WorldCover classifies as class 80. Genuine disagreement between the two source datasets, not a bug — `land_mask` (not `pop_valid`) is what gates HEI/statistics, so this doesn't need special-casing.
+- Land-only mean LST (41.08 degC) is notably warmer than the combined land+water mean (36.13 degC) and much warmer than water-only (30.29 degC) — expected, since ~47% of the AOI is cooler ocean/lagoon surface that would otherwise drag the mean down. This is exactly the effect land-masking is meant to produce.
 
 ### Fixed methodological decisions (do not reopen)
 
@@ -55,7 +63,7 @@ Set once in `config/config.yaml` (comment: "Locked project decisions... do not c
 
 ### Land masking is mandatory, not optional
 
-~45% of the AOI bbox is ocean (WorldCover class 80). LST is valid data over water (not nodata), so computing `lst_z`, correlations, LST-by-landcover stats, or Getis-Ord Gi* over all pixels rather than land cells only would let sea-surface temperatures bias every land statistic. Every module past `preprocess.py` must derive and respect a `land_mask` column (`worldcover != 80`): water cells are excluded from all statistics and from HEI, but still rendered (as masked/nodata) on raw LST/hotspot maps.
+~45% of the AOI bbox is ocean (WorldCover class 80). LST is valid data over water (not nodata), so computing `lst_z`, correlations, LST-by-landcover stats, or Getis-Ord Gi* over all pixels rather than land cells only would let sea-surface temperatures bias every land statistic. `features.parquet`'s `land_mask` column (`worldcover != 80 and != 255`, confirmed correct — excludes both true water and the WorldCover nodata-edge cells) is the single source of truth for this: every module past `features.py` must filter on it before computing statistics or HEI. Water/excluded cells stay in the table and are still rendered (as masked/nodata) on raw LST/hotspot maps — just never enter a statistic.
 
 ### Raw raster quirks (confirmed via `src/check_raw_data.py`, see `reports/methodology_notes.md` for full numbers)
 
@@ -74,7 +82,7 @@ Set once in `config/config.yaml` (comment: "Locked project decisions... do not c
 | `check_raw_data.py` | implemented | Raw-data audit gate — NaN-aware stats + assertions on all 7 rasters, writes `outputs/tables/raw_data_audit.csv`. Run this before trusting any preprocessing decision. |
 | `grid.py` | implemented | Builds the 100m reference grid (EPSG:32644) from `data/external/cmc_boundary.geojson`'s bbox geometry, bounds snapped outward to clean 100m multiples. Outputs `data/processed/grid.gpkg` (polygon grid) + `data/interim/grid_reference.tif` (the reproject target). Current AOI resolves to **81 x 134 cells**. |
 | `preprocess.py` | implemented | Aligns all 7 raw rasters onto `grid_reference.tif` (see "reference-grid pattern" above) and derives `land_mask` from aligned WorldCover (`!= 80` and `!= 255`). Never touches `data/raw/`. Verified: land ~53%/water ~47%, WorldPop mass conserved within ~0.7%. |
-| `features.py` | stub | Stack aligned rasters into one row-per-cell table (`data/processed/features.parquet`) — the single contract every downstream module reads. |
+| `features.py` | implemented | Stacks aligned rasters into `data/processed/features.parquet` (10,854 rows): `cell_id, x, y, lst, ndvi, ndbi, built_up, lulc_class, pop_count, pop_density, valid_lst, pop_valid, land_mask`. No `elevation`/`dist_water` — no SRTM raster was exported, only ever needed for the deferred ML layer. The single contract every downstream module reads. |
 | `hotspots.py` | stub | Global Moran's I + Getis-Ord Gi* on LST (via `esda`/`libpysal`), computed over land cells only. |
 | `hvi.py` | stub | Combine `lst_z` (land-only), `pop_density`, `inv_ndvi` into HEI per the fixed formula; 5-class quantile classify. |
 | `validation.py` | stub | Landsat-vs-MODIS aggregation/correlation, LST-by-landcover stats, LST/NDVI/NDBI/built-up correlation matrix — all land-only. |
