@@ -3,9 +3,6 @@ data/interim/*
 data/processed/*
 data/external/*
 !**/.gitkeep
-outputs/figures/*
-outputs/maps/*
-outputs/tables/*
 outputs/models/*
 outputs/presentations/*
 !**/.gitkeep
