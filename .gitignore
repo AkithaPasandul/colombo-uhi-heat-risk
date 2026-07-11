@@ -1,26 +1,30 @@
+# Python & Environments
+__pycache__/
+*.pyc
+.venv/
+env/
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+# Data Pipeline
 data/raw/*
 data/interim/*
 data/processed/*
 data/external/*
-!**/.gitkeep
+
+# Outputs & Logs
 outputs/models/*
 outputs/presentations/*
-!**/.gitkeep
 outputs/run.log
 
-# Optional ML stretch work. Keep local until the core GIS pipeline is complete.
-src/model.py
-src/shap_analysis.py
-notebooks/*model*.ipynb
-notebooks/*ml*.ipynb
-notebooks/*shap*.ipynb
-
-__pycache__/
-*.pyc
-.ipynb_checkpoints/
-.venv/
-env/
-*.json
-
+# Documentation & Build
 docs/
 graphify-out/
+
+# Miscellaneous File Types
+*.json
+
+# Exceptions
+# Allow Git to track otherwise ignored empty folders
+!**/.gitkeep
