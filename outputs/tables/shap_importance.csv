@@ -1,0 +1,26 @@
+feature,mean_abs_shap,level
+ndbi_foc3,0.36007696686931734,headline_aggregated
+ndbi,0.3547475205072209,headline_aggregated
+ndvi_foc3,0.19674067167488807,headline_aggregated
+dist_water_m,0.15127416381115985,headline_aggregated
+ndvi,0.13531537729658705,headline_aggregated
+built_up_foc3,0.11918666079353149,headline_aggregated
+pop_density_foc3,0.11345239703053941,headline_aggregated
+pop_density,0.08559795430918696,headline_aggregated
+lulc_class (all),0.07510788379522072,headline_aggregated
+built_up,0.03905683676811817,headline_aggregated
+ndbi_foc3,0.36007696686931734,per_column
+ndbi,0.3547475205072209,per_column
+ndvi_foc3,0.19674067167488807,per_column
+dist_water_m,0.15127416381115985,per_column
+ndvi,0.13531537729658705,per_column
+built_up_foc3,0.11918666079353149,per_column
+pop_density_foc3,0.11345239703053941,per_column
+pop_density,0.08559795430918696,per_column
+built_up,0.03905683676811817,per_column
+lulc_10,0.03688767086011506,per_column
+lulc_50,0.03612733668418558,per_column
+lulc_60,0.0011348395869492456,per_column
+lulc_30,0.0008153236207249714,per_column
+lulc_40,0.00014271304324585895,per_column
+lulc_90,0.0,per_column
