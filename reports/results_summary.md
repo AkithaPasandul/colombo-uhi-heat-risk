@@ -2,6 +2,11 @@
 Headline numbers for the paper. All statistics are land-cells-only ("within study bbox",
 never "within CMC") — see methodology_notes.md for the land-masking rationale.
 
+> **Paper status (2026-07-25)**: both 6-page ICTAR versions are drafted and citation-aligned
+> (Paper A = core/no-ML, 20 refs, fallback; Paper B = +ML/XAI, 21 refs, preferred if it fits
+> 6 pages). Every number below is the source of truth for both drafts. See
+> `reports/paper_writing_status.md` for the assembly checklist and standing guardrails.
+
 ## Core pipeline (the paper's contribution)
 
 - **LST (land cells, 2024 dry season)**: range 31.66–47.34 °C, mean 41.08 °C (n=5,777).
